@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "A simple blockchain explorer for Substrate networks",
   "private": true,
+  "engines": {
+    "node": "18.x"
+  },
   "workspaces": [
     "backend",
     "frontend",
@@ -15,6 +18,9 @@
     "build": "yarn build:backend && yarn build:frontend",
     "build:backend": "cd backend && yarn build",
     "build:frontend": "cd frontend && yarn build",
+    "build:render": "cd backend && yarn install --frozen-lockfile && yarn build",
+    "start": "cd backend && yarn start:prod",
+    "start:backend": "cd backend && yarn start:prod",
     "install:all": "yarn install && cd backend && yarn install && cd ../frontend && yarn install && cd ../shared && yarn install",
     "test": "cd backend && yarn test",
     "test:watch": "cd backend && yarn test:watch",

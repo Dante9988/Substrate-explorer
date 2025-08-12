@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: substrate-explorer-backend
+    runtime: node
+    plan: free
+    buildCommand: cd backend && yarn install --frozen-lockfile && yarn build
+    startCommand: cd backend && yarn start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: HOST
+        value: 0.0.0.0
+      - key: ALLOWED_ORIGINS
+        value: https://substrate-explorer.onrender.com,https://your-frontend-domain.netlify.app

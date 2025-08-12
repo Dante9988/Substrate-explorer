@@ -1,0 +1,8 @@
+frontend/
+shared/
+node_modules/
+.git/
+*.md
+*.log
+dist/
+build/
