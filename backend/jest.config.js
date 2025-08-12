@@ -1,8 +1,8 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/src'],
-  testMatch: ['**/*.spec.ts'],
+  roots: ['<rootDir>/test'],
+  testMatch: ['**/*.spec.ts', '**/*.test.ts', '**/*integration.spec.ts'],
   transform: {
     '^.+\\.ts$': 'ts-jest',
   },
@@ -16,6 +16,6 @@ module.exports = {
   moduleNameMapper: {
     '^@blockchain-explorer/shared$': '<rootDir>/../shared/src',
   },
-  setupFilesAfterEnv: ['<rootDir>/src/test/setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
   testTimeout: 10000,
 };

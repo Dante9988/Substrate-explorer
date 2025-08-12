@@ -22,10 +22,11 @@
     }
   },
   "exclude": [
+    "test/**/*",
     "**/*.spec.ts",
     "**/*.test.ts",
     "**/*.integration.spec.ts",
-    "test/**/*",
-    "**/node_modules/**"
+    "**/node_modules/**",
+    "dist/**/*"
   ]
 }

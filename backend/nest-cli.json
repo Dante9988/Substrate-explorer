@@ -6,6 +6,7 @@
     "deleteOutDir": true
   },
   "exclude": [
+    "test/**/*",
     "**/*.spec.ts",
     "**/*.test.ts",
     "**/*.integration.spec.ts"
