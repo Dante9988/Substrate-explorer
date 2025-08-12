@@ -14,6 +14,7 @@ async function bootstrap() {
         'http://localhost:5173', 
         'http://127.0.0.1:5173',
         'https://substrate-explorer-production.up.railway.app',
+        'https://substrate-explorer.io',
         'https://your-frontend-domain.netlify.app' // Update this with your actual frontend domain
       ];
 
@@ -32,13 +33,14 @@ async function bootstrap() {
     .setVersion('1.0')
     .addTag('search', 'Search operations for addresses and blocks')
     .addServer('https://substrate-explorer-production.up.railway.app', 'Production Server')
+    .addServer('https://substrate-explorer.io', 'Production Domain')
     .addServer('http://localhost:3001', 'Local Development')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
-  const port = process.env.PORT || 3001;
+  const port = process.env.PORT || 8080;
   const host = process.env.HOST || '0.0.0.0';
   
   // Debug logging to see what we're actually binding to
@@ -51,7 +53,10 @@ async function bootstrap() {
   // Log the actual binding
   console.log(`✅ Successfully bound to ${host}:${port}`);
   
-  const serverUrl = process.env.NODE_ENV === 'production' 
+  // Use Railway URL for production, localhost for development
+  const serverUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : process.env.NODE_ENV === 'production'
     ? 'https://substrate-explorer-production.up.railway.app'
     : `http://localhost:${port}`;
     
