@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "A simple blockchain explorer for Substrate networks",
   "private": true,
-  "engines": {
-    "node": "18.x"
-  },
   "workspaces": [
     "backend",
     "frontend",
