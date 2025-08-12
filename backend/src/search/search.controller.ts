@@ -2,8 +2,7 @@ import { Controller, Get, Post, Query, Param, Body, HttpException, HttpStatus } 
 import { ApiTags, ApiOperation, ApiQuery, ApiParam, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { BlockchainService } from '../blockchain/blockchain.service';
 import { CacheService } from '../cache/cache.service';
-import { TxHit, SearchResult, BlockInfo, NetworkInfo } from '@blockchain-explorer/shared';
-import { DEFAULT_BLOCKS_TO_SCAN, DEFAULT_BATCH_SIZE } from '@blockchain-explorer/shared';
+import { TxHit, SearchResult, BlockInfo, NetworkInfo, DEFAULT_BLOCKS_TO_SCAN, DEFAULT_BATCH_SIZE } from '../types';
 import { TxHitDto, SearchResultDto, BlockInfoDto, NetworkInfoDto, LatestBlockDto, ExtrinsicResponseDto } from './dto/search.dto';
 
 // Temporary fix for MAX_BLOCKS_TO_SCAN import issue

@@ -1,24 +1,23 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
 # Copy package files from backend context
-COPY package*.json ./
-COPY yarn.lock ./
+COPY backend/package*.json ./
 
 # Copy source code
-COPY src/ ./src/
-COPY tsconfig*.json ./
-COPY nest-cli.json ./
+COPY backend/src/ ./src/
+COPY backend/tsconfig*.json ./
+COPY backend/nest-cli.json ./
 
 # Install dependencies
-RUN yarn install --frozen-lockfile
+RUN yarn install
 
 # Build the application
 RUN yarn build
 
 # Remove devDependencies to reduce image size
-RUN yarn install --frozen-lockfile --production
+RUN yarn install --production
 
 # Expose port
 EXPOSE 3001

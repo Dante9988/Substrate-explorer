@@ -3,7 +3,7 @@ import { ApiPromise, WsProvider } from '@polkadot/api';
 import { EventRecord } from '@polkadot/types/interfaces';
 import { Keyring } from '@polkadot/keyring';
 import { SubmittableExtrinsic } from '@polkadot/api/types';
-import { TxHit, SubstrateAccount, TransferResult, StakingResult, BatchTransferResult, BlockExtrinsics, BlockInfo } from '@blockchain-explorer/shared';
+import { TxHit, SubstrateAccount, TransferResult, StakingResult, BatchTransferResult, BlockExtrinsics, BlockInfo } from '../types';
 import { mnemonicGenerate, mnemonicValidate, cryptoWaitReady } from '@polkadot/util-crypto';
 import { blockchainConfig } from '../config/blockchain.config';
 
