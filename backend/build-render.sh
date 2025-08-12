@@ -3,6 +3,10 @@
 # Render-specific build script for backend only
 echo "🚀 Building backend for Render deployment..."
 
+# Clean previous builds
+echo "🧹 Cleaning previous builds..."
+rm -rf dist/
+
 # Install dependencies (including devDependencies for build)
 echo "📦 Installing dependencies..."
 yarn install --frozen-lockfile

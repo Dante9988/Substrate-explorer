@@ -20,5 +20,12 @@
     "paths": {
       "@blockchain-explorer/shared": ["../shared/src"]
     }
-  }
+  },
+  "exclude": [
+    "**/*.spec.ts",
+    "**/*.test.ts",
+    "**/*.integration.spec.ts",
+    "test/**/*",
+    "**/node_modules/**"
+  ]
 }
