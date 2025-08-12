@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Hash, Clock, Activity, Users, FileText, ExternalLink, Copy, CheckCircle, AlertCircle, Loader2, Calendar, ArrowUpRight, Link as LinkIcon } from 'lucide-react'
+import { ArrowLeft, Hash, Clock, Activity, Users, FileText, Copy, CheckCircle, AlertCircle, Link as LinkIcon } from 'lucide-react'
 import { getExtrinsicInfo } from '../services/api'
 
 interface ExtrinsicData {
@@ -192,7 +192,7 @@ const ExtrinsicPage: React.FC = () => {
             {/* Nonce */}
             <div className="space-y-2">
               <div className="flex items-center space-x-2">
-                <Calendar className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                <Clock className="h-5 w-5 text-purple-600 dark:text-purple-400" />
                 <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Nonce</span>
               </div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">{extrinsic.nonce}</p>

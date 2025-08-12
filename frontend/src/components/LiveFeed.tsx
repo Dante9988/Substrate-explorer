@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Hash, Clock, ArrowUpRight, ArrowDownLeft, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react'
+import { Hash, Clock, ArrowUpRight, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react'
 import { io, Socket } from 'socket.io-client'
 
 interface LiveBlock {

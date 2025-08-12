@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Hash, Clock, SquareStack, RefreshCw, Search } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Search } from 'lucide-react'
 import { getLatestBlockInfo, getBlockInfo, getBlockInfoByHash } from '../services/api'
 
 interface BlockInfo {
@@ -437,7 +437,7 @@ const BlocksPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {blocks.map((block, index) => (
+              {blocks.map((block) => (
                 <tr key={block.number} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <Link 

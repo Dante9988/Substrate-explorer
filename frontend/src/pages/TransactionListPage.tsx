@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Hash, Clock, Activity, Users, FileText, ExternalLink, Copy, CheckCircle, AlertCircle, Loader2, Calendar, ArrowUpRight, Search, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Hash, Users, Copy, CheckCircle, AlertCircle, Loader2, ArrowUpRight, Search, RefreshCw } from 'lucide-react'
 import { searchAddress } from '../services/api'
 import { TxHit } from '@blockchain-explorer/shared'
 
@@ -77,16 +77,7 @@ const TransactionListPage: React.FC = () => {
     return addr
   }
 
-  const getTimeAgo = (timestamp: number): string => {
-    const seconds = Math.floor((Date.now() - timestamp) / 1000)
-    if (seconds < 60) return `${seconds} seconds ago`
-    const minutes = Math.floor(seconds / 60)
-    if (minutes < 60) return `${minutes} minutes ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours} hours ago`
-    const days = Math.floor(hours / 24)
-    return `${days} days ago`
-  }
+
 
   if (loading) {
     return (

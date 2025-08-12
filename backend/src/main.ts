@@ -14,7 +14,9 @@ async function bootstrap() {
         'http://localhost:5173',
         'http://localhost:8080', 
         'http://127.0.0.1:5173',
-        'https://substrate-explorer-production.up.railway.app'
+        'https://substrate-explorer-production.up.railway.app',
+        'https://*.vercel.app',  // Vercel preview deployments
+        'https://*.vercel.app'   // Vercel production deployments
       ];
 
   // Enable CORS

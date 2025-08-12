@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Hash, Clock, Activity, Users, FileText, ExternalLink, Copy, CheckCircle, AlertCircle, Loader2, Calendar, ArrowUpRight } from 'lucide-react'
+import { ArrowLeft, Hash, Clock, Activity, Users, FileText, Copy, CheckCircle, AlertCircle, ArrowUpRight } from 'lucide-react'
 import { getBlockInfo, getBlockInfoByHash } from '../services/api'
 import { BlockInfo } from '@blockchain-explorer/shared'
 

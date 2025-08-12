@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Hash, ArrowRight, TrendingUp, Activity, Clock, Users, Zap } from 'lucide-react'
+import { Search, Hash, Activity, Users, Zap } from 'lucide-react'
 import LiveFeed from '../components/LiveFeed'
 
 const HomePage: React.FC = () => {
