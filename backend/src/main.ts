@@ -15,7 +15,7 @@ async function bootstrap() {
         'http://localhost:8080', 
         'http://127.0.0.1:5173',
         'https://substrate-explorer-production.up.railway.app',
-        'https://*.vercel.app',  // Vercel preview deployments
+        'https://substrate-explorer-frontend-9hdv4dpi7-dante9988s-projects.vercel.app',
         'https://*.vercel.app'   // Vercel production deployments
       ];
 
