@@ -2,25 +2,30 @@
 *
 
 # Include only backend-specific files
-!backend/package*.json
-!backend/yarn.lock
-!backend/src/
-!backend/tsconfig*.json
-!backend/nest-cli.json
-!backend/dist/
+!package*.json
+!yarn.lock
+!src/
+!tsconfig*.json
+!nest-cli.json
+!dist/
 
-# Exclude unnecessary files even if they exist in backend
-backend/node_modules
-backend/npm-debug.log
-backend/.git
-backend/.gitignore
-backend/README.md
-backend/.env
-backend/.nyc_output
-backend/coverage
-backend/.nyc_output
-backend/.coverage
-backend/.cache
-backend/build
-backend/.DS_Store
-backend/*.log
+# Exclude unnecessary files
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+.env
+.nyc_output
+coverage
+.coverage
+.cache
+build
+.DS_Store
+*.log
+
+# Exclude test files
+test/
+**/*.spec.ts
+**/*.test.ts
+**/*.integration.spec.ts
