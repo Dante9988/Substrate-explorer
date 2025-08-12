@@ -14,9 +14,7 @@ async function bootstrap() {
         'http://localhost:5173',
         'http://localhost:8080', 
         'http://127.0.0.1:5173',
-        'https://substrate-explorer-production.up.railway.app',
-        'https://substrate-explorer.io',
-        'https://your-frontend-domain.netlify.app' // Update this with your actual frontend domain
+        'https://substrate-explorer-production.up.railway.app'
       ];
 
   // Enable CORS
@@ -34,7 +32,6 @@ async function bootstrap() {
     .setVersion('1.0')
     .addTag('search', 'Search operations for addresses and blocks')
     .addServer('https://substrate-explorer-production.up.railway.app', 'Production Server')
-    .addServer('https://substrate-explorer.io', 'Production Domain')
     .addServer('http://localhost:8080', 'Local Development')
     .build();
 
