@@ -12,7 +12,6 @@
     "restartPolicyMaxRetries": 10,
     "workingDirectory": "backend",
     "envVars": {
-      "PORT": "8080",
       "HOST": "0.0.0.0",
       "NODE_ENV": "production"
     }
