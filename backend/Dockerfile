@@ -7,7 +7,8 @@ COPY package*.json ./
 COPY yarn.lock ./
 
 # Install dependencies
-RUN yarn install --frozen-lockfile
+RUN npm install -g yarn
+RUN yarn install 
 
 # Copy source code
 COPY . .
@@ -19,4 +20,4 @@ RUN yarn build
 EXPOSE 3001
 
 # Start the application
-CMD ["yarn", "start:prod"]
+CMD ["yarn", "start"]
