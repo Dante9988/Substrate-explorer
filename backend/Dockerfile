@@ -3,16 +3,16 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Copy backend package files only
-COPY package*.json ./
-COPY yarn.lock ./
+COPY backend/package*.json ./
+COPY backend/yarn.lock ./
 
 # Install ALL dependencies (including devDependencies for build)
 RUN yarn install --frozen-lockfile
 
 # Copy backend source code only (not the entire project)
-COPY src/ ./src/
-COPY tsconfig*.json ./
-COPY nest-cli.json ./
+COPY backend/src/ ./src/
+COPY backend/tsconfig*.json ./
+COPY backend/nest-cli.json ./
 
 # Build the application (this will create dist/ folder)
 RUN yarn build
