@@ -36,7 +36,7 @@ const LiveFeed: React.FC = () => {
     const connectWebSocket = () => {
       try {
         // Connect to our backend WebSocket server
-        const wsUrl = import.meta.env.VITE_API_URL?.replace('http', 'ws') || 'ws://localhost:3001'
+        const wsUrl = import.meta.env.VITE_API_URL?.replace('http', 'ws') || 'ws://localhost:8080'
         console.log('Attempting to connect to WebSocket at:', wsUrl)
         setDebugInfo(`Connecting to ${wsUrl}...`)
         
