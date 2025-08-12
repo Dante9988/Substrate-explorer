@@ -1,0 +1,29 @@
+{
+  "name": "blockchain-explorer",
+  "version": "1.0.0",
+  "description": "A simple blockchain explorer for Substrate networks",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"yarn dev:backend\" \"yarn dev:frontend\"",
+    "dev:backend": "cd backend && yarn build && yarn start:dev",
+    "dev:frontend": "cd frontend && yarn dev",
+    "build": "yarn build:backend && yarn build:frontend",
+    "build:backend": "cd backend && yarn build",
+    "build:frontend": "cd frontend && yarn build",
+    "install:all": "yarn install && cd backend && yarn install && cd ../frontend && yarn install && cd ../shared && yarn install",
+    "test": "cd backend && yarn test",
+    "test:watch": "cd backend && yarn test:watch",
+    "test:cov": "cd backend && yarn test:cov",
+    "test:integration": "cd backend && yarn test --testPathPattern=integration --verbose",
+    "test:controllers": "cd backend && yarn test --testPathPattern=controller --verbose",
+    "test:transactions": "cd backend && yarn test --testPathPattern=transaction --verbose"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
