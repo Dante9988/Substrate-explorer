@@ -13,7 +13,7 @@ async function bootstrap() {
         'http://127.0.0.1:3000', 
         'http://localhost:5173', 
         'http://127.0.0.1:5173',
-        'https://substrate-explorer.onrender.com',
+        'https://substrate-explorer-production.up.railway.app',
         'https://your-frontend-domain.netlify.app' // Update this with your actual frontend domain
       ];
 
@@ -31,7 +31,7 @@ async function bootstrap() {
     .setDescription('A simple blockchain explorer for Substrate networks')
     .setVersion('1.0')
     .addTag('search', 'Search operations for addresses and blocks')
-    .addServer('https://substrate-explorer.onrender.com', 'Production Server')
+    .addServer('https://substrate-explorer-production.up.railway.app', 'Production Server')
     .addServer('http://localhost:3001', 'Local Development')
     .build();
 
@@ -44,7 +44,7 @@ async function bootstrap() {
   await app.listen(port, host);
   
   const serverUrl = process.env.NODE_ENV === 'production' 
-    ? 'https://substrate-explorer.onrender.com'
+    ? 'https://substrate-explorer-production.up.railway.app'
     : `http://localhost:${port}`;
     
   console.log(`🚀 Blockchain Explorer API is running on: ${serverUrl}`);

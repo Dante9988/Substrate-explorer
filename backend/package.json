@@ -10,8 +10,6 @@
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "start:websocket": "ts-node src/server.ts",
-    "start:websocket:dev": "ts-node-dev src/server.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
