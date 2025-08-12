@@ -41,7 +41,15 @@ async function bootstrap() {
   const port = process.env.PORT || 3001;
   const host = process.env.HOST || '0.0.0.0';
   
+  // Debug logging to see what we're actually binding to
+  console.log(`🔧 Binding to host: ${host}, port: ${port}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔌 CORS origins: ${allowedOrigins.join(', ')}`);
+  
   await app.listen(port, host);
+  
+  // Log the actual binding
+  console.log(`✅ Successfully bound to ${host}:${port}`);
   
   const serverUrl = process.env.NODE_ENV === 'production' 
     ? 'https://substrate-explorer-production.up.railway.app'
@@ -49,6 +57,7 @@ async function bootstrap() {
     
   console.log(`🚀 Blockchain Explorer API is running on: ${serverUrl}`);
   console.log(`📚 API Documentation available at: ${serverUrl}/api/docs`);
+  console.log(`🔗 Internal binding: ${host}:${port}`);
 }
 
 bootstrap();

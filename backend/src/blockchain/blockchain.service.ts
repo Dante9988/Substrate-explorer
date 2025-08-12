@@ -3,12 +3,9 @@ import { ApiPromise, WsProvider } from '@polkadot/api';
 import { EventRecord } from '@polkadot/types/interfaces';
 import { Keyring } from '@polkadot/keyring';
 import { SubmittableExtrinsic } from '@polkadot/api/types';
-import { TxHit, SubstrateAccount, TransferResult, StakingResult, BatchTransferResult, BlockExtrinsics, BlockInfo } from '../types';
+import { TxHit, SubstrateAccount, TransferResult, StakingResult, BatchTransferResult, BlockExtrinsics, BlockInfo, MAX_BLOCKS_TO_SCAN } from '../types';
 import { mnemonicGenerate, mnemonicValidate, cryptoWaitReady } from '@polkadot/util-crypto';
 import { blockchainConfig } from '../config/blockchain.config';
-
-// Temporary fix for MAX_BLOCKS_TO_SCAN import issue
-const MAX_BLOCKS_TO_SCAN = 10000;
 
 @Injectable()
 export class BlockchainService implements OnModuleInit {

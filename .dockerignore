@@ -1,35 +1,37 @@
-# Exclude everything by default
-*
+# Exclude unnecessary files and directories
+node_modules/
+npm-debug.log
+.git/
+.gitignore
+README.md
+.env
+.nyc_output
+coverage/
+.coverage/
+.cache/
+build/
+.DS_Store
+*.log
 
-# Include root yarn.lock (needed for all packages)
-!yarn.lock
-
-# Include shared package files and source code
-!shared/package*.json
-!shared/src/
-!shared/tsconfig*.json
-
-# Include backend-specific files and source code
-!backend/package*.json
-!backend/src/
-!backend/tsconfig*.json
-!backend/nest-cli.json
-!backend/dist/
-
-# Exclude unnecessary files
-**/node_modules
-**/npm-debug.log
-**/.git
-**/.gitignore
-**/README.md
-**/.env
-**/.nyc_output
-**/coverage
-**/.coverage
-**/.cache
-**/build
-**/.DS_Store
-**/*.log
-
-# Exclude other project directories
+# Exclude frontend (not needed for backend build)
 frontend/
+
+# Exclude test files (not needed for production build)
+**/*.spec.ts
+**/*.test.ts
+**/*.integration.spec.ts
+test/
+
+# Exclude development files
+**/.env.local
+**/.env.development
+**/.env.test
+**/coverage/
+**/.nyc_output/
+**/.cache/
+**/build/
+**/dist/
+
+# Exclude documentation
+*.md
+docs/
