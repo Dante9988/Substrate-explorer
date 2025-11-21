@@ -18,6 +18,9 @@ A simple and modern blockchain explorer for Substrate networks, built with NestJ
 - **NestJS** - Progressive Node.js framework with dependency injection
 - **Express** - Web framework
 - **@polkadot/api** - Substrate blockchain interaction
+- **Prisma** - Modern ORM for database access
+- **PostgreSQL** - Production database (Railway)
+- **SQLite** - Local development database (optional)
 - **TypeScript** - Type-safe development
 - **Docker** - Containerized deployment
 - **Railway** - Production hosting platform

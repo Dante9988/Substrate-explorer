@@ -20,12 +20,49 @@ cd shared && yarn build && cd ..
 ```
 
 ### 3. Initialize Database (First Time Only)
-```bash
-cd backend
-npx prisma generate
-npx prisma migrate dev --name init
-cd ..
-```
+
+**Option A: Use PostgreSQL (Recommended for Railway compatibility)**
+
+1. Install PostgreSQL locally or use Docker:
+   ```bash
+   docker run --name postgres-dev -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=substrate_explorer -p 5432:5432 -d postgres:15
+   ```
+
+2. Create `backend/.env`:
+   ```env
+   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/substrate_explorer"
+   ```
+
+3. Run migrations:
+   ```bash
+   cd backend
+   npx prisma generate
+   npx prisma migrate dev --name init
+   cd ..
+   ```
+
+**Option B: Use SQLite for Local Development**
+
+1. Switch to SQLite:
+   ```bash
+   cd backend
+   chmod +x scripts/switch-to-sqlite.sh
+   ./scripts/switch-to-sqlite.sh
+   ```
+
+2. Create `backend/.env`:
+   ```env
+   DATABASE_URL="file:./prisma/dev.db"
+   ```
+
+3. Run migrations:
+   ```bash
+   npx prisma generate
+   npx prisma migrate dev --name init
+   cd ..
+   ```
+
+> **Note**: The default schema uses PostgreSQL for Railway deployment. Use Option B only if you prefer SQLite for local development.
 
 ### 4. Start Development Servers
 ```bash
