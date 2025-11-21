@@ -6,14 +6,12 @@ WORKDIR /app
 COPY backend/package*.json ./
 COPY backend/yarn.lock* ./
 
-# Install dependencies (including Prisma CLI)
-RUN yarn install
-
-# Copy Prisma schema and migrations
+# Copy Prisma schema and migrations FIRST (needed for postinstall script)
 COPY backend/prisma ./prisma
 
-# Generate Prisma Client
-RUN npx prisma generate
+# Install dependencies (including Prisma CLI)
+# This will run postinstall script which generates Prisma Client
+RUN yarn install
 
 # Copy source code
 COPY backend/src/ ./src/
