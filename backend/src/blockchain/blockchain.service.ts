@@ -12,9 +12,15 @@ export class BlockchainService implements OnModuleInit {
   private readonly logger = new Logger(BlockchainService.name);
   private api: ApiPromise | null = null;
   private wsProvider: WsProvider | null = null;
+  private connectionPool: ApiPromise[] = []; // Pool of RPC connections for concurrent scanning
+  private readonly MAX_CONCURRENT_CONNECTIONS = 5; // Number of parallel RPC connections
+  private readonly MAX_BATCH_SIZE = 1000; // Maximum batch size
+  private rpcChangeLock: Promise<void> | null = null; // Lock to prevent concurrent RPC endpoint changes
+  private ongoingOperations: Set<Promise<any>> = new Set(); // Track ongoing operations
 
   async onModuleInit() {
     await this.connect();
+    await this.initializeConnectionPool();
   }
 
   /**
@@ -54,6 +60,9 @@ export class BlockchainService implements OnModuleInit {
    * Disconnects from the blockchain.
    */
   async disconnect(): Promise<void> {
+    // Disconnect connection pool first
+    await this.disconnectConnectionPool();
+    
     if (this.api) {
       await this.api.disconnect();
       this.api = null;
@@ -81,25 +90,136 @@ export class BlockchainService implements OnModuleInit {
 
   /**
    * Changes the RPC endpoint and reconnects.
+   * Uses a lock to prevent concurrent RPC endpoint changes and waits for ongoing operations.
    */
   async changeRpcEndpoint(newEndpoint: string): Promise<void> {
-    // Validate the endpoint format
-    if (!newEndpoint.startsWith('wss://') && !newEndpoint.startsWith('ws://')) {
-      throw new Error('Invalid RPC endpoint. Must start with wss:// or ws://');
+    // Wait for any existing RPC change to complete
+    if (this.rpcChangeLock) {
+      this.logger.log('Waiting for existing RPC endpoint change to complete...');
+      await this.rpcChangeLock;
     }
 
-    this.logger.log(`Changing RPC endpoint from ${blockchainConfig.rpcEndpoint} to ${newEndpoint}`);
-    
-    // Disconnect from current endpoint
+    // Create a new lock for this RPC change
+    let resolveLock: (() => void) | undefined;
+    this.rpcChangeLock = new Promise((resolve) => {
+      resolveLock = resolve;
+    });
+
+    try {
+      // Validate the endpoint format
+      if (!newEndpoint.startsWith('wss://') && !newEndpoint.startsWith('ws://')) {
+        throw new Error('Invalid RPC endpoint. Must start with wss:// or ws://');
+      }
+
+      this.logger.log(`Changing RPC endpoint from ${blockchainConfig.rpcEndpoint} to ${newEndpoint}`);
+      
+      // Wait for ongoing operations to complete (with timeout)
+      if (this.ongoingOperations.size > 0) {
+        this.logger.log(`Waiting for ${this.ongoingOperations.size} ongoing operations to complete...`);
+        try {
+          await Promise.race([
+            Promise.all(Array.from(this.ongoingOperations)),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout waiting for operations')), 30000)
+            )
+          ]);
+          this.logger.log('All ongoing operations completed');
+        } catch (error: any) {
+          this.logger.warn(`Some operations may still be running: ${error.message}`);
+        }
+      }
+      
+      // Disconnect from current endpoint
+      if (this.api) {
+        await this.disconnect();
+      }
+
+      // Disconnect connection pool
+      await this.disconnectConnectionPool();
+
+      // Update the configuration
+      blockchainConfig.rpcEndpoint = newEndpoint;
+      
+      // Reconnect to new endpoint
+      await this.connect();
+      await this.initializeConnectionPool();
+      
+      this.logger.log('RPC endpoint changed successfully');
+    } finally {
+      // Release the lock
+      this.rpcChangeLock = null;
+      if (resolveLock) {
+        resolveLock();
+      }
+    }
+  }
+
+  /**
+   * Initializes a pool of RPC connections for concurrent scanning.
+   */
+  private async initializeConnectionPool(): Promise<void> {
+    try {
+      this.logger.log(`Initializing connection pool with ${this.MAX_CONCURRENT_CONNECTIONS} connections...`);
+      
+      // Clear existing pool
+      this.connectionPool = [];
+      
+      // Create multiple connections
+      const connectionPromises = Array.from({ length: this.MAX_CONCURRENT_CONNECTIONS }, async (_, index) => {
+        try {
+          const provider = new WsProvider(blockchainConfig.rpcEndpoint);
+          const api = await ApiPromise.create({
+            provider,
+            throwOnConnect: true,
+            noInitWarn: true,
+          });
+          this.logger.log(`Connection pool: Connection ${index + 1}/${this.MAX_CONCURRENT_CONNECTIONS} established`);
+          return api;
+        } catch (error) {
+          this.logger.error(`Failed to create connection pool connection ${index + 1}:`, error);
+          return null;
+        }
+      });
+      
+      const connections = await Promise.all(connectionPromises);
+      this.connectionPool = connections.filter(conn => conn !== null) as ApiPromise[];
+      
+      this.logger.log(`Connection pool initialized with ${this.connectionPool.length} active connections`);
+    } catch (error) {
+      this.logger.error('Failed to initialize connection pool:', error);
+      // Continue without pool - will use main connection
+    }
+  }
+
+  /**
+   * Disconnects all connections in the pool.
+   */
+  private async disconnectConnectionPool(): Promise<void> {
+    this.logger.log(`Disconnecting ${this.connectionPool.length} connection pool connections...`);
+    await Promise.all(
+      this.connectionPool.map(async (api, index) => {
+        try {
+          await api.disconnect();
+        } catch (error) {
+          this.logger.error(`Error disconnecting pool connection ${index + 1}:`, error);
+        }
+      })
+    );
+    this.connectionPool = [];
+  }
+
+  /**
+   * Gets an API instance from the connection pool (round-robin).
+   * Falls back to main connection if pool is empty.
+   */
+  private getApiFromPool(index: number): ApiPromise {
+    if (this.connectionPool.length > 0) {
+      return this.connectionPool[index % this.connectionPool.length];
+    }
     if (this.api) {
-      await this.disconnect();
+      return this.api;
     }
-
-    // Update the configuration
-    blockchainConfig.rpcEndpoint = newEndpoint;
-    
-    // Reconnect to new endpoint
-    await this.connect();
+    throw new Error('No API connections available');
   }
 
   /**
@@ -108,9 +228,45 @@ export class BlockchainService implements OnModuleInit {
    * @param address The address to search for.
    * @param blocksToScan The number of recent blocks to scan (default: 1000 for better coverage).
    * @param batchSize The number of blocks to process in each concurrent batch.
+   * @param palletFilter Optional: Filter by specific pallet.
+   * @param extrinsicFilter Optional: Filter by specific extrinsic/method.
    * @returns A promise that resolves to an array of transaction hits.
    */
-  async searchAddressInRecentBlocks(address: string, blocksToScan: number = 10000, batchSize: number = 100): Promise<TxHit[]> {
+  async searchAddressInRecentBlocks(address: string, 
+    blocksToScan: number = 10000, 
+    batchSize: number = 100,
+    palletFilter?: string,
+    extrinsicFilter?: string
+  ): Promise<TxHit[]> {
+    // Wait for any RPC endpoint change to complete
+    if (this.rpcChangeLock) {
+      this.logger.log('Waiting for RPC endpoint change to complete before searching...');
+      await this.rpcChangeLock;
+    }
+
+    // Track this operation
+    const operationPromise = this.executeSearchAddressInRecentBlocks(
+      address, blocksToScan, batchSize, palletFilter, extrinsicFilter
+    );
+    this.ongoingOperations.add(operationPromise);
+    
+    try {
+      return await operationPromise;
+    } finally {
+      this.ongoingOperations.delete(operationPromise);
+    }
+  }
+
+  /**
+   * Internal method to execute the search (extracted for operation tracking).
+   */
+  private async executeSearchAddressInRecentBlocks(
+    address: string, 
+    blocksToScan: number, 
+    batchSize: number,
+    palletFilter?: string,
+    extrinsicFilter?: string
+  ): Promise<TxHit[]> {
     if (!this.api) {
       throw new Error('API not initialized. Please call connect() first.');
     }
@@ -124,8 +280,8 @@ export class BlockchainService implements OnModuleInit {
       throw new Error(`Invalid blocksToScan: must be a positive integer <= ${MAX_BLOCKS_TO_SCAN}, got ${blocksToScan}`);
     }
     
-    if (!Number.isInteger(batchSize) || batchSize <= 0 || batchSize > 100) {
-      throw new Error(`Invalid batchSize: must be a positive integer <= 100, got ${batchSize}`);
+    if (!Number.isInteger(batchSize) || batchSize <= 0 || batchSize > this.MAX_BATCH_SIZE) {
+      throw new Error(`Invalid batchSize: must be a positive integer <= ${this.MAX_BATCH_SIZE}, got ${batchSize}`);
     }
 
     // Log coverage warning for testing purposes
@@ -136,6 +292,13 @@ export class BlockchainService implements OnModuleInit {
     
     this.logger.warn(`⚠️ TESTING MODE: Address search in ${blocksToScan} blocks covers only ${erasCovered} eras (${timeCoverage} minutes = ~${hoursCoverage} hours)`);
     this.logger.warn(`⚠️ For production use, consider implementing a proper address indexer`);
+    
+    // Log filter info
+    if (palletFilter || extrinsicFilter) {
+      this.logger.log(
+        `🔍 Searching with extrinsic filter: ${palletFilter || '*'}.${extrinsicFilter || '*'}`
+      );
+    }
 
     try {
       // Step 1: Get account information to see if the address exists and get current state
@@ -163,7 +326,7 @@ export class BlockchainService implements OnModuleInit {
         // Scan only blocks with confirmed activity + some surrounding blocks for context
         const blocksToScanOptimized = this.optimizeBlockScan(blocksWithActivity, lastBlock, blocksToScan);
         this.logger.log(`Optimized scan will check ${blocksToScanOptimized.length} blocks for address ${address}`);
-        return await this.scanOptimizedBlocks(address, blocksToScanOptimized, batchSize);
+        return await this.scanOptimizedBlocks(address, blocksToScanOptimized, batchSize, palletFilter, extrinsicFilter);
       }
       
       this.logger.log(`No events found for ${address}, proceeding with full block scan`);
@@ -174,7 +337,7 @@ export class BlockchainService implements OnModuleInit {
 
     // Fall back to the efficient block scanning method if no events found
     this.logger.log(`Starting full scan from block #${await this.getLatestBlockNumber()} for ${blocksToScan} blocks with batch size ${batchSize}`);
-    const results = await this.scanBlocksEfficiently(address, blocksToScan, batchSize);
+    const results = await this.scanBlocksEfficiently(address, blocksToScan, batchSize, palletFilter, extrinsicFilter);
     this.logger.log(`Full scan complete for address ${address}. Found ${results.length} results.`);
     return results;
   }
@@ -262,9 +425,17 @@ export class BlockchainService implements OnModuleInit {
    * @param address Address to search for.
    * @param blockNumbers Array of block numbers to scan.
    * @param batchSize Batch size for processing.
+   * @param palletFilter Optional: Filter by specific pallet.
+   * @param extrinsicFilter Optional: Filter by specific extrinsic/method.
    * @returns Array of transaction hits.
    */
-  private async scanOptimizedBlocks(address: string, blockNumbers: number[], batchSize: number): Promise<TxHit[]> {
+  private async scanOptimizedBlocks(
+    address: string, 
+    blockNumbers: number[], 
+    batchSize: number,
+    palletFilter?: string,
+    extrinsicFilter?: string
+  ): Promise<TxHit[]> {
     let allResults: TxHit[] = [];
     
     for (let i = 0; i < blockNumbers.length; i += batchSize) {
@@ -272,7 +443,7 @@ export class BlockchainService implements OnModuleInit {
       this.logger.log(`Processing optimized batch of ${batch.length} blocks: from #${batch[0]} to #${batch[batch.length - 1]}`);
       
       const batchResults = await Promise.all(
-        batch.map(blockNumber => this.processBlock(address, blockNumber))
+        batch.map(blockNumber => this.processBlockWithApi(address, blockNumber, this.api!, palletFilter, extrinsicFilter))
       );
       
       const batchTotal = batchResults.reduce((sum, results) => sum + results.length, 0);
@@ -286,54 +457,118 @@ export class BlockchainService implements OnModuleInit {
   }
 
   /**
-   * Efficiently scans blocks for address activity using the original method.
+   * Efficiently scans blocks for address activity using concurrent connections.
    * @param address Address to search for.
    * @param blocksToScan Number of blocks to scan.
    * @param batchSize Batch size for processing.
+   * @param palletFilter Optional: Filter by specific pallet.
+   * @param extrinsicFilter Optional: Filter by specific extrinsic/method.
    * @returns Array of transaction hits.
    */
-  private async scanBlocksEfficiently(address: string, blocksToScan: number, batchSize: number): Promise<TxHit[]> {
+  private async scanBlocksEfficiently(
+    address: string, 
+    blocksToScan: number, 
+    batchSize: number,
+    palletFilter?: string,
+    extrinsicFilter?: string
+  ): Promise<TxHit[]> {
     const latestHeader = await this.api.rpc.chain.getHeader();
     const lastBlock = latestHeader.number.toNumber();
-    this.logger.log(`Starting efficient scan from block #${lastBlock} for ${blocksToScan} blocks with batch size ${batchSize}`);
+    const totalBatches = Math.ceil(blocksToScan / batchSize);
+    const concurrentBatches = Math.min(this.MAX_CONCURRENT_CONNECTIONS, totalBatches);
+    
+    this.logger.log(
+      `Starting concurrent scan from block #${lastBlock} for ${blocksToScan} blocks ` +
+      `with batch size ${batchSize} using ${concurrentBatches} concurrent connections`
+    );
 
     const blockNumbersToScan = Array.from({ length: blocksToScan }, (_, i) => lastBlock - i).filter(n => n > 0);
 
     let allResults: TxHit[] = [];
-    for (let i = 0; i < blockNumbersToScan.length; i += batchSize) {
-      const batch = blockNumbersToScan.slice(i, i + Math.min(batchSize, blockNumbersToScan.length - i));
-      this.logger.log(`Processing batch of ${batch.length} blocks: from #${batch[0]} to #${batch[batch.length - 1]}`);
+    let processedBatches = 0;
+    
+    // Process batches concurrently using connection pool
+    for (let i = 0; i < blockNumbersToScan.length; i += batchSize * concurrentBatches) {
+      // Create multiple batches to process concurrently
+      const concurrentBatchPromises: Promise<TxHit[]>[] = [];
       
-      const batchResults = await Promise.all(
-        batch.map(blockNumber => this.processBlock(address, blockNumber))
+      for (let j = 0; j < concurrentBatches && (i + j * batchSize) < blockNumbersToScan.length; j++) {
+        const batchStart = i + j * batchSize;
+        const batch = blockNumbersToScan.slice(batchStart, batchStart + Math.min(batchSize, blockNumbersToScan.length - batchStart));
+        
+        if (batch.length > 0) {
+          const batchIndex = Math.floor(batchStart / batchSize);
+          this.logger.log(
+            `Queueing batch ${batchIndex + 1}/${totalBatches}: blocks #${batch[batch.length - 1]} to #${batch[0]} ` +
+            `(${batch.length} blocks) using connection ${(j % this.connectionPool.length) + 1}`
+          );
+          
+          // Use different connection from pool for each concurrent batch
+          concurrentBatchPromises.push(
+            this.processBatchWithConnection(address, batch, batchIndex, j, palletFilter, extrinsicFilter)
+          );
+        }
+      }
+      
+      // Wait for all concurrent batches to complete
+      const concurrentResults = await Promise.all(concurrentBatchPromises);
+      const batchTotal = concurrentResults.reduce((sum, results) => sum + results.length, 0);
+      processedBatches += concurrentBatchPromises.length;
+      
+      this.logger.log(
+        `Completed ${processedBatches}/${totalBatches} batches. ` +
+        `Found ${batchTotal} results in this round. Total so far: ${allResults.length + batchTotal}`
       );
       
-      const batchTotal = batchResults.reduce((sum, results) => sum + results.length, 0);
-      this.logger.log(`Batch ${Math.floor(i / batchSize) + 1} returned ${batchTotal} results for address ${address}`);
-      
-      allResults = allResults.concat(...batchResults);
+      allResults = allResults.concat(...concurrentResults);
     }
 
-    this.logger.log(`Efficient scan complete. Found ${allResults.length} results.`);
+    this.logger.log(`Concurrent scan complete. Found ${allResults.length} results from ${blocksToScan} blocks.`);
     return allResults;
   }
 
   /**
-   * Processes a single block to find transactions and events related to a specific address.
+   * Processes a batch of blocks using a specific connection from the pool.
+   */
+  private async processBatchWithConnection(
+    address: string, 
+    blockNumbers: number[], 
+    batchIndex: number,
+    connectionIndex: number,
+    palletFilter?: string,
+    extrinsicFilter?: string
+  ): Promise<TxHit[]> {
+    const api = this.getApiFromPool(connectionIndex);
+    
+    // Process all blocks in this batch using the assigned connection
+    const blockResults = await Promise.all(
+      blockNumbers.map(blockNumber => this.processBlockWithApi(address, blockNumber, api, palletFilter, extrinsicFilter))
+    );
+    
+    return blockResults.flat();
+  }
+
+  /**
+   * Processes a single block using a specific API instance.
    * @param address The address to search for.
    * @param blockNumber The block number to process.
+   * @param api The API instance to use.
+   * @param palletFilter Optional: Filter by specific pallet.
+   * @param extrinsicFilter Optional: Filter by specific extrinsic/method.
    * @returns A promise that resolves to an array of transaction hits found in the block.
    */
-  private async processBlock(address: string, blockNumber: number): Promise<TxHit[]> {
-    if (!this.api) {
-      throw new Error('API not initialized.');
-    }
-  
+  private async processBlockWithApi(
+    address: string, 
+    blockNumber: number, 
+    api: ApiPromise,
+    palletFilter?: string,
+    extrinsicFilter?: string
+  ): Promise<TxHit[]> {
     const results: TxHit[] = [];
     try {
-      const blockHash = await this.api.rpc.chain.getBlockHash(blockNumber);
-      const signedBlock = await this.api.rpc.chain.getBlock(blockHash);
-      const allRecords = await this.api.query.system.events.at(blockHash);
+      const blockHash = await api.rpc.chain.getBlockHash(blockNumber);
+      const signedBlock = await api.rpc.chain.getBlock(blockHash);
+      const allRecords = await api.query.system.events.at(blockHash);
       
       this.logger.debug(`Processing block #${blockNumber} with ${signedBlock.block.extrinsics.length} extrinsics for address ${address}`);
   
@@ -343,7 +578,21 @@ export class BlockchainService implements OnModuleInit {
         
         // Only include extrinsics that are related to the search address
         if (ex.isSigned && ex.signer.toString() === address) {
-          this.logger.debug(`Found extrinsic for address ${address} in block #${blockNumber}: ${ex.method.section}.${ex.method.method}`);
+          const section = ex.method.section;
+          const method = ex.method.method;
+          
+          // Apply extrinsic filter if provided
+          if (palletFilter || extrinsicFilter) {
+            const matchesPallet = !palletFilter || section.toLowerCase() === palletFilter.toLowerCase();
+            const matchesExtrinsic = !extrinsicFilter || method.toLowerCase() === extrinsicFilter.toLowerCase();
+            
+            if (!matchesPallet || !matchesExtrinsic) {
+              // Skip this extrinsic - doesn't match filter
+              continue;
+            }
+          }
+          
+          this.logger.debug(`Found extrinsic for address ${address} in block #${blockNumber}: ${section}.${method}`);
           
           // Get events associated with this extrinsic
           const extrinsicEvents = (allRecords as unknown as EventRecord[]).filter((event) => {
@@ -354,8 +603,8 @@ export class BlockchainService implements OnModuleInit {
           const hit = {
             blockNumber: blockNumber,
             blockHash: blockHash.toHex(),
-            section: ex.method.section,
-            method: ex.method.method,
+            section: section,
+            method: method,
             data: ex.method.args.map(a => a.toHuman() as string),
             extrinsicHash: ex.hash.toHex(),
             extrinsicIndex,
@@ -424,11 +673,25 @@ export class BlockchainService implements OnModuleInit {
       if (results.length > 0) {
         this.logger.debug(`Block #${blockNumber} returned ${results.length} results for address ${address}`);
       }
+      
+      return results;
     } catch (error) {
       this.logger.error(`Error processing block #${blockNumber}:`, error);
+      return [];
     }
-  
-    return results;
+  }
+
+  /**
+   * Processes a single block using the main API connection (for backward compatibility).
+   * @param address The address to search for.
+   * @param blockNumber The block number to process.
+   * @returns A promise that resolves to an array of transaction hits found in the block.
+   */
+  private async processBlock(address: string, blockNumber: number): Promise<TxHit[]> {
+    if (!this.api) {
+      throw new Error('API not initialized.');
+    }
+    return this.processBlockWithApi(address, blockNumber, this.api);
   }
 
   /**
@@ -638,6 +901,11 @@ export class BlockchainService implements OnModuleInit {
    * Gets the latest block number.
    */
   async getLatestBlockNumber(): Promise<number> {
+    // Wait for any RPC endpoint change to complete
+    if (this.rpcChangeLock) {
+      await this.rpcChangeLock;
+    }
+
     if (!this.api) {
       throw new Error('API not initialized.');
     }

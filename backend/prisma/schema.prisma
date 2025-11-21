@@ -1,0 +1,149 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Block {
+  id               String       @id @default(uuid())
+  number           Int          @unique
+  hash             String       @unique
+  parentHash       String
+  stateRoot        String
+  extrinsicsRoot   String
+  timestamp        DateTime
+  author           String?
+  extrinsicsCount  Int          @default(0)
+  eventsCount      Int          @default(0)
+  
+  extrinsics       Extrinsic[]
+  events           Event[]
+  
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  
+  @@index([number])
+  @@index([hash])
+  @@index([timestamp])
+}
+
+model Extrinsic {
+  id               String       @id @default(uuid())
+  hash             String       @unique
+  blockNumber      Int
+  blockHash        String
+  extrinsicIndex   Int
+  section          String
+  method           String
+  signer           String?
+  nonce            Int?
+  args             String       // JSON string
+  signature        String?
+  isSigned         Boolean      @default(false)
+  success          Boolean      @default(true)
+  
+  block            Block        @relation(fields: [blockNumber], references: [number], onDelete: Cascade)
+  events           Event[]
+  addressRelations AddressExtrinsic[]
+  
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  
+  @@index([hash])
+  @@index([blockNumber])
+  @@index([signer])
+  @@index([section, method])
+}
+
+model Event {
+  id               String       @id @default(uuid())
+  blockNumber      Int
+  blockHash        String
+  extrinsicHash    String?
+  extrinsicIndex   Int?
+  eventIndex       Int
+  section          String
+  method           String
+  data             String       // JSON string
+  
+  block            Block        @relation(fields: [blockNumber], references: [number], onDelete: Cascade)
+  extrinsic        Extrinsic?   @relation(fields: [extrinsicHash], references: [hash], onDelete: Cascade)
+  addressRelations AddressEvent[]
+  
+  createdAt        DateTime     @default(now())
+  
+  @@index([blockNumber])
+  @@index([extrinsicHash])
+  @@index([section, method])
+}
+
+model Address {
+  id               String       @id @default(uuid())
+  address          String       @unique
+  firstSeenBlock   Int
+  lastSeenBlock    Int
+  transactionCount Int          @default(0)
+  
+  extrinsics       AddressExtrinsic[]
+  events           AddressEvent[]
+  
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  
+  @@index([address])
+  @@index([lastSeenBlock])
+}
+
+// Junction table for many-to-many relationship between Address and Extrinsic
+model AddressExtrinsic {
+  id               String       @id @default(uuid())
+  addressId        String
+  extrinsicHash    String
+  blockNumber      Int
+  role             String       // 'signer', 'destination', 'validator', etc.
+  
+  address          Address      @relation(fields: [addressId], references: [id], onDelete: Cascade)
+  extrinsic        Extrinsic    @relation(fields: [extrinsicHash], references: [hash], onDelete: Cascade)
+  
+  createdAt        DateTime     @default(now())
+  
+  @@unique([addressId, extrinsicHash])
+  @@index([addressId])
+  @@index([extrinsicHash])
+  @@index([blockNumber])
+}
+
+// Junction table for many-to-many relationship between Address and Event
+model AddressEvent {
+  id               String       @id @default(uuid())
+  addressId        String
+  eventId          String
+  blockNumber      Int
+  role             String       // 'from', 'to', 'beneficiary', etc.
+  
+  address          Address      @relation(fields: [addressId], references: [id], onDelete: Cascade)
+  event            Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  createdAt        DateTime     @default(now())
+  
+  @@unique([addressId, eventId])
+  @@index([addressId])
+  @@index([eventId])
+  @@index([blockNumber])
+}
+
+model IndexerState {
+  id               String       @id @default(uuid())
+  key              String       @unique
+  value            String
+  
+  updatedAt        DateTime     @updatedAt
+  
+  @@index([key])
+}

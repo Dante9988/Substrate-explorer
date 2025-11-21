@@ -75,14 +75,29 @@ export class WebSocketService {
       this.logger.log('Blockchain API available, setting up subscriptions...');
       
       // Subscribe to new block headers
-      const unsubscribeNewHeads = await api.rpc.chain.subscribeNewHeads((header: any) => {
+      const unsubscribeNewHeads = await api.rpc.chain.subscribeNewHeads(async (header: any) => {
         try {
           const blockNumber = header.number.toNumber();
           const blockHash = header.hash.toHex();
           
           this.logger.log(`🆕 New block #${blockNumber} detected: ${blockHash}`);
           
-          // Emit block update event
+          // Get block for full data
+          const block = await api.rpc.chain.getBlock(blockHash);
+          const timestamp = await api.query.timestamp.now.at(blockHash);
+          
+          // Emit block.new event for indexer
+          this.eventEmitter.emit('block.new', {
+            number: blockNumber,
+            hash: blockHash,
+            parentHash: header.parentHash.toHex(),
+            stateRoot: header.stateRoot.toHex(),
+            extrinsicsRoot: header.extrinsicsRoot.toHex(),
+            timestamp: timestamp.toNumber(),
+            author: header.author?.toString() || null
+          });
+          
+          // Emit blockchain.newBlock event for WebSocket clients
           this.eventEmitter.emit('blockchain.newBlock', {
             blockNumber,
             blockHash,
@@ -193,7 +208,39 @@ export class WebSocketService {
       const extrinsicsCount = blockExtrinsics.extrinsics.length;
       this.logger.log(`Block #${blockNumber} has ${extrinsicsCount} extrinsics`);
       
-      // Emit block details event
+      // Prepare extrinsics data for indexer
+      const extrinsicsForIndexer = blockExtrinsics.extrinsics.map((ext: any) => ({
+        hash: ext.hash,
+        blockNumber,
+        blockHash,
+        extrinsicIndex: ext.index,
+        section: ext.section,
+        method: ext.method,
+        signer: ext.signer || null,
+        nonce: ext.nonce || null,
+        args: ext.args || [],
+        signature: ext.signature || null,
+        isSigned: !!ext.signer,
+        success: ext.success !== false,
+        events: (ext.events || []).map((event: any, eventIndex: number) => ({
+          blockNumber,
+          blockHash,
+          extrinsicHash: ext.hash,
+          extrinsicIndex: ext.index,
+          eventIndex,
+          section: event.section,
+          method: event.method,
+          data: event.data || []
+        }))
+      }));
+      
+      // Emit block.details event for indexer
+      this.eventEmitter.emit('block.details', {
+        blockNumber,
+        extrinsics: extrinsicsForIndexer
+      });
+      
+      // Emit blockchain.blockDetails event for WebSocket clients
       this.eventEmitter.emit('blockchain.blockDetails', {
         blockNumber,
         blockHash,
@@ -201,7 +248,7 @@ export class WebSocketService {
         timestamp: new Date().toISOString()
       });
       
-      // Process each extrinsic and emit transaction events
+      // Process each extrinsic and emit transaction events for WebSocket clients
       for (const extrinsic of blockExtrinsics.extrinsics) {
         try {
           // Emit new transaction event

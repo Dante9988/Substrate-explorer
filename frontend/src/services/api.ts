@@ -22,11 +22,15 @@ api.interceptors.response.use(
 export const searchAddress = async (
   address: string,
   blocksToScan: number,
-  batchSize: number
+  batchSize: number,
+  pallet?: string,
+  extrinsic?: string
 ): Promise<SearchResult> => {
-  const response = await api.get('/api/search/address', {
-    params: { address, blocksToScan, batchSize }
-  })
+  const params: any = { address, blocksToScan, batchSize }
+  if (pallet && pallet.trim()) params.pallet = pallet.trim()
+  if (extrinsic && extrinsic.trim()) params.extrinsic = extrinsic.trim()
+  
+  const response = await api.get('/api/search/address', { params })
   return response.data
 }
 

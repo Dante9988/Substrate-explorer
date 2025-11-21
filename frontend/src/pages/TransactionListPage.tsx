@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Hash, Users, Copy, CheckCircle, AlertCircle, Loader2, ArrowUpRight, Search, RefreshCw } from 'lucide-react'
 import { searchAddress } from '../services/api'
@@ -11,28 +11,57 @@ const TransactionListPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [blocksToScan, setBlocksToScan] = useState('10000')
   const [batchSize, setBatchSize] = useState('100')
+  const [pallet, setPallet] = useState('')
+  const [extrinsic, setExtrinsic] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [copiedHash, setCopiedHash] = useState<string | null>(null)
+  const [hasSearched, setHasSearched] = useState(false)
 
-  useEffect(() => {
-    if (address) {
-      fetchTransactions()
-    }
-  }, [address])
+  // Don't auto-search on mount - let user configure parameters first
+  // useEffect(() => {
+  //   if (address) {
+  //     fetchTransactions()
+  //   }
+  // }, [address])
 
   const fetchTransactions = async () => {
     if (!address) return
 
     setLoading(true)
     setError(null)
+    setIsSearching(true)
+    setHasSearched(true)
     
     try {
-      const result = await searchAddress(address, parseInt(blocksToScan), parseInt(batchSize))
-      setTransactions(result.transactions)
+      console.log(`[Frontend] Fetching transactions: address=${address.substring(0, 10)}..., blocks=${blocksToScan}, batchSize=${batchSize}, pallet=${pallet || 'none'}, extrinsic=${extrinsic || 'none'}`)
+      const result = await searchAddress(
+        address, 
+        parseInt(blocksToScan), 
+        parseInt(batchSize),
+        pallet || undefined,
+        extrinsic || undefined
+      )
+      console.log(`[Frontend] Fetch completed:`, {
+        total: result?.total,
+        transactionsCount: result?.transactions?.length,
+        blocksScanned: result?.blocksScanned
+      })
+      
+      // Ensure transactions is always an array
+      const txns = Array.isArray(result?.transactions) ? result.transactions : []
+      console.log(`[Frontend] Setting ${txns.length} transactions`)
+      setTransactions(txns)
+      
+      if (txns.length === 0) {
+        console.log('[Frontend] No transactions found')
+      }
     } catch (err) {
+      console.error('[Frontend] Error fetching transactions:', err)
       setError(err instanceof Error ? err.message : 'Failed to fetch transactions')
+      setTransactions([]) // Reset to empty array on error
     } finally {
       setLoading(false)
+      setIsSearching(false)
     }
   }
 
@@ -42,14 +71,47 @@ const TransactionListPage: React.FC = () => {
 
     setIsSearching(true)
     setError(null)
+    setLoading(true) // Also set loading state
+    setHasSearched(true)
     
     try {
-      const result = await searchAddress(address, parseInt(blocksToScan), parseInt(batchSize))
-      setTransactions(result.transactions)
+      console.log(`[Frontend] Starting search: address=${address.substring(0, 10)}..., blocks=${blocksToScan}, batchSize=${batchSize}, pallet=${pallet || 'none'}, extrinsic=${extrinsic || 'none'}`)
+      const result = await searchAddress(
+        address, 
+        parseInt(blocksToScan), 
+        parseInt(batchSize),
+        pallet || undefined,
+        extrinsic || undefined
+      )
+      console.log(`[Frontend] Search completed:`, {
+        total: result?.total,
+        transactionsCount: result?.transactions?.length,
+        blocksScanned: result?.blocksScanned
+      })
+      
+      // Ensure transactions is always an array
+      const txns = Array.isArray(result?.transactions) ? result.transactions : []
+      console.log(`[Frontend] Setting ${txns.length} transactions`)
+      setTransactions(txns)
+      
+      // Scroll to results section after update
+      setTimeout(() => {
+        const resultsSection = document.getElementById('results-section')
+        if (resultsSection) {
+          resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 100)
+      
+      if (txns.length === 0) {
+        console.log('[Frontend] No transactions found - this might be expected if address has no activity')
+      }
     } catch (err) {
+      console.error('[Frontend] Search error:', err)
       setError(err instanceof Error ? err.message : 'Search failed')
+      setTransactions([]) // Reset to empty array on error
     } finally {
       setIsSearching(false)
+      setLoading(false)
     }
   }
 
@@ -79,7 +141,9 @@ const TransactionListPage: React.FC = () => {
 
 
 
-  if (loading) {
+  // Show loading overlay when searching, but keep the form visible
+  // Only show initial loading if we've already searched
+  if (loading && transactions.length === 0 && hasSearched) {
     return (
       <div className="text-center py-12">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
@@ -104,7 +168,23 @@ const TransactionListPage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Loading Overlay - shows when searching but results exist */}
+      {isSearching && transactions.length > 0 && (
+        <div className="absolute inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center rounded-lg">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-8 shadow-xl">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-900 dark:text-white text-lg font-medium">Searching blockchain...</p>
+            <p className="text-gray-600 dark:text-gray-400 text-sm mt-2">
+              Scanning {blocksToScan} blocks with batch size {batchSize}
+            </p>
+            <p className="text-gray-500 dark:text-gray-500 text-xs mt-4">
+              This may take a few minutes for large scans. Results will update automatically.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -135,6 +215,49 @@ const TransactionListPage: React.FC = () => {
         
         <div className="p-6">
           <form onSubmit={handleSearch} className="space-y-4">
+            {/* Extrinsic Filter Section */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+              <div className="flex items-center space-x-2 mb-3">
+                <Search className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                  Filter by Extrinsic (Optional)
+                </h3>
+              </div>
+              <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
+                Leave empty to search all transactions. Fill both fields to filter by specific extrinsic (e.g., nominationPools.join)
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="pallet" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Pallet (e.g., nominationPools)
+                  </label>
+                  <input
+                    id="pallet"
+                    type="text"
+                    value={pallet}
+                    onChange={(e) => setPallet(e.target.value)}
+                    placeholder="nominationPools"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none transition-colors"
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="extrinsic" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Extrinsic/Method (e.g., join)
+                  </label>
+                  <input
+                    id="extrinsic"
+                    type="text"
+                    value={extrinsic}
+                    onChange={(e) => setExtrinsic(e.target.value)}
+                    placeholder="join"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Scan Parameters */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="blocksToScan" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -146,7 +269,7 @@ const TransactionListPage: React.FC = () => {
                   value={blocksToScan}
                   onChange={(e) => setBlocksToScan(e.target.value)}
                   min="1"
-                  max="10000"
+                  max="1000000"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none transition-colors"
                 />
               </div>
@@ -161,7 +284,7 @@ const TransactionListPage: React.FC = () => {
                   value={batchSize}
                   onChange={(e) => setBatchSize(e.target.value)}
                   min="1"
-                  max="100"
+                  max="1000"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none transition-colors"
                 />
               </div>
@@ -201,15 +324,23 @@ const TransactionListPage: React.FC = () => {
       </div>
 
       {/* Results Summary */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+      <div id="results-section" className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Search Results ({transactions.length} transactions)
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Search Results ({Array.isArray(transactions) ? transactions.length : 0} transactions)
+            </h2>
+            {isSearching && (
+              <div className="flex items-center space-x-2 text-blue-600 dark:text-blue-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Updating...</span>
+              </div>
+            )}
+          </div>
         </div>
         
         <div className="p-6">
-          {transactions.length === 0 ? (
+          {!Array.isArray(transactions) || transactions.length === 0 ? (
             <div className="text-center py-12">
               <Search className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
               <p className="text-gray-500 dark:text-gray-400">No transactions found for this address</p>
@@ -312,7 +443,7 @@ const TransactionListPage: React.FC = () => {
       </div>
 
       {/* Debug Section (Development Only) */}
-      {process.env.NODE_ENV === 'development' && transactions.length > 0 && (
+      {process.env.NODE_ENV === 'development' && Array.isArray(transactions) && transactions.length > 0 && (
         <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Debug Section</h2>

@@ -142,4 +142,4 @@ export interface NetworkInfo {
 // Constants
 export const DEFAULT_BLOCKS_TO_SCAN = 10000;
 export const DEFAULT_BATCH_SIZE = 20;
-export const MAX_BLOCKS_TO_SCAN = 10000;
+export const MAX_BLOCKS_TO_SCAN = 1000000; // Increased to 1 million blocks for comprehensive searches

@@ -1,26 +1,34 @@
-import { Controller, Get, Post, Query, Param, Body, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Query, Param, Body, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiParam, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { BlockchainService } from '../blockchain/blockchain.service';
 import { CacheService } from '../cache/cache.service';
+import { DatabaseService } from '../database/database.service';
 import { TxHit, SearchResult, BlockInfo, NetworkInfo, DEFAULT_BLOCKS_TO_SCAN, DEFAULT_BATCH_SIZE } from '../types';
 import { TxHitDto, SearchResultDto, BlockInfoDto, NetworkInfoDto, LatestBlockDto, ExtrinsicResponseDto } from './dto/search.dto';
 
-// Temporary fix for MAX_BLOCKS_TO_SCAN import issue
-const MAX_BLOCKS_TO_SCAN = 10000;
+// Maximum blocks to scan - increased to 1 million for comprehensive searches
+const MAX_BLOCKS_TO_SCAN = 1000000;
+const MAX_BATCH_SIZE = 1000; // Increased batch size for better performance
+const MAX_CONCURRENT_CONNECTIONS = 5; // Number of parallel RPC connections
 
 @ApiTags('search')
 @Controller('api')
 export class SearchController {
+  private readonly logger = new Logger(SearchController.name);
+
   constructor(
     private readonly blockchainService: BlockchainService,
-    private readonly cacheService: CacheService
+    private readonly cacheService: CacheService,
+    private readonly db: DatabaseService
   ) {}
 
   @Get('search/address')
   @ApiOperation({ summary: 'Search for transactions and events related to an address' })
   @ApiQuery({ name: 'address', description: 'The address to search for', required: true })
-  @ApiQuery({ name: 'blocksToScan', description: 'Number of recent blocks to scan (default: 10000 for better coverage)', required: false, type: Number })
-  @ApiQuery({ name: 'batchSize', description: 'Number of blocks to process in each batch (default: 100 for better performance)', required: false, type: Number })
+  @ApiQuery({ name: 'blocksToScan', description: 'Number of recent blocks to scan (default: 10000, max: 1000000)', required: false, type: Number })
+  @ApiQuery({ name: 'batchSize', description: 'Number of blocks to process in each batch (default: 100, max: 1000)', required: false, type: Number })
+  @ApiQuery({ name: 'pallet', description: 'Filter by specific pallet (e.g., nominationPools). Optional.', required: false, type: String })
+  @ApiQuery({ name: 'extrinsic', description: 'Filter by specific extrinsic/method (e.g., join). Optional. Requires pallet to be set.', required: false, type: String })
   @ApiResponse({ status: 200, description: 'Search results', type: SearchResultDto })
   @ApiResponse({ status: 400, description: 'Invalid parameters' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
@@ -28,6 +36,8 @@ export class SearchController {
     @Query('address') address: string,
     @Query('blocksToScan') blocksToScan?: string,
     @Query('batchSize') batchSize?: string,
+    @Query('pallet') pallet?: string,
+    @Query('extrinsic') extrinsic?: string,
   ): Promise<SearchResult> {
     // Validate address parameter
     if (!address || typeof address !== 'string' || address.trim() === '') {
@@ -54,16 +64,33 @@ export class SearchController {
       );
     }
 
-    if (isNaN(batchSizeNum) || batchSizeNum <= 0 || batchSizeNum > 100) {
-      throw new HttpException('batchSize must be a positive number <= 100', HttpStatus.BAD_REQUEST);
+    if (isNaN(batchSizeNum) || batchSizeNum <= 0 || batchSizeNum > MAX_BATCH_SIZE) {
+      throw new HttpException(`batchSize must be a positive number <= ${MAX_BATCH_SIZE}`, HttpStatus.BAD_REQUEST);
     }
 
-    // Check cache first
+    // Validate pallet/extrinsic parameters
+    const palletFilter = pallet?.trim() || undefined;
+    const extrinsicFilter = extrinsic?.trim() || undefined;
+    
+    if (extrinsicFilter && !palletFilter) {
+      throw new HttpException('Extrinsic filter requires pallet to be specified', HttpStatus.BAD_REQUEST);
+    }
+
+    // Log filter info
+    if (palletFilter || extrinsicFilter) {
+      this.logger.log(
+        `Searching with extrinsic filter: ${palletFilter || 'none'}.${extrinsicFilter || 'none'}`
+      );
+    }
+
+    // Check cache first (include filters in cache key)
     const cacheKey = {
       type: 'address' as const,
       query: address,
       blocksToScan: blocksToScanNum,
-      batchSize: batchSizeNum
+      batchSize: batchSizeNum,
+      pallet: palletFilter || 'default',
+      extrinsic: extrinsicFilter || 'default'
     };
 
     // Check if we have a cached result
@@ -81,11 +108,111 @@ export class SearchController {
     }
 
     try {
-      // Create the search request
+      // Check database coverage first
+      const [lastIndexedBlock, firstIndexedBlock, currentBlock] = await Promise.all([
+        this.db.getLastIndexedBlock(),
+        this.db.getFirstIndexedBlock(),
+        this.blockchainService.getLatestBlockNumber()
+      ]);
+      
+      // Calculate the oldest block we need to have indexed
+      const requestedStartBlock = Math.max(0, currentBlock - blocksToScanNum);
+      
+      // We have enough coverage if:
+      // 1. We have indexed blocks
+      // 2. The oldest block we need (requestedStartBlock) is >= our first indexed block
+      // 3. The newest block we need (currentBlock) is <= our last indexed block
+      const hasEnoughCoverage = 
+        firstIndexedBlock !== null && 
+        lastIndexedBlock !== null &&
+        firstIndexedBlock <= requestedStartBlock &&
+        lastIndexedBlock >= currentBlock;
+      
+      this.logger.log(
+        `Database coverage check: indexed range ${firstIndexedBlock}-${lastIndexedBlock}, ` +
+        `current block ${currentBlock}, requested range: blocks ${requestedStartBlock}-${currentBlock} ` +
+        `(${blocksToScanNum} blocks). Coverage: ${hasEnoughCoverage ? 'sufficient' : 'insufficient - will scan blockchain'}`
+      );
+      
+      // Only use database if we have sufficient coverage for the requested block range
+      if (hasEnoughCoverage) {
+        this.logger.log(`Checking database for address ${address.substring(0, 10)}...`);
+        const dbExtrinsics = await this.db.getAddressExtrinsics(address, 1000); // Get more results
+        
+        if (dbExtrinsics && dbExtrinsics.length > 0) {
+          // Filter to only include transactions within the requested block range
+          const requestedStartBlock = currentBlock - blocksToScanNum;
+          const filteredExtrinsics = dbExtrinsics.filter((ext: any) => 
+            ext.blockNumber >= requestedStartBlock && ext.blockNumber <= currentBlock
+          );
+          
+          this.logger.log(
+            `Found ${dbExtrinsics.length} total extrinsics in database, ` +
+            `${filteredExtrinsics.length} within requested range (blocks ${requestedStartBlock}-${currentBlock})`
+          );
+          
+          // Apply extrinsic filter if provided
+          let finalExtrinsics = filteredExtrinsics;
+          if (palletFilter || extrinsicFilter) {
+            finalExtrinsics = filteredExtrinsics.filter((ext: any) => {
+              const matchesPallet = !palletFilter || ext.section.toLowerCase() === palletFilter.toLowerCase();
+              const matchesExtrinsic = !extrinsicFilter || ext.method.toLowerCase() === extrinsicFilter.toLowerCase();
+              return matchesPallet && matchesExtrinsic;
+            });
+            
+            this.logger.log(
+              `Applied extrinsic filter: ${filteredExtrinsics.length} → ${finalExtrinsics.length} transactions ` +
+              `(${palletFilter || '*'}.${extrinsicFilter || '*'})`
+            );
+          }
+          
+          // If we have results in the requested range, use them
+          if (finalExtrinsics.length > 0) {
+            // Convert DB extrinsics to TxHit format
+            const transactions: TxHit[] = finalExtrinsics.map((ext: any) => ({
+              blockNumber: ext.blockNumber,
+              blockHash: ext.blockHash,
+              extrinsicIndex: ext.extrinsicIndex,
+              extrinsicHash: ext.hash,
+              section: ext.section,
+              method: ext.method,
+              signer: ext.signer || undefined,
+              args: ext.args,
+              data: ext.args, // TxHit expects 'data' field
+              events: ext.events.map((e: any) => ({
+                section: e.section,
+                method: e.method,
+                data: e.data
+              }))
+            }));
+            
+            const result: SearchResult = {
+              transactions,
+              total: transactions.length,
+              blocksScanned: blocksToScanNum, // Indicate we scanned this many blocks
+            };
+            
+            // Cache the result
+            this.cacheService.set(cacheKey, result, 5 * 60 * 1000); // 5 minutes
+            
+            return result;
+          }
+        }
+      }
+      
+      // If database doesn't have enough coverage or no results, query blockchain
+      this.logger.log(
+        `Database coverage insufficient or no results found. ` +
+        `Querying blockchain for ${address.substring(0, 10)}... (scanning ${blocksToScanNum} blocks)`
+      );
+      
+      // Create the search request with optional extrinsic filters
       const searchPromise = this.blockchainService.searchAddressInRecentBlocks(
         address,
         blocksToScanNum,
-        batchSizeNum
+        batchSizeNum,
+        palletFilter,
+        extrinsicFilter
       );
 
       // Set this as a pending request to implement request pooling
@@ -93,9 +220,12 @@ export class SearchController {
 
       const transactions = await searchPromise;
 
+      // Ensure transactions is always an array
+      const txArray = Array.isArray(transactions) ? transactions : [];
+
       const result: SearchResult = {
-        transactions,
-        total: transactions.length,
+        transactions: txArray,
+        total: txArray.length,
         blocksScanned: blocksToScanNum,
       };
 
@@ -130,6 +260,41 @@ export class SearchController {
     }
 
     try {
+      // Check database first
+      const dbBlock = await this.db.getBlockByNumber(blockNum);
+      if (dbBlock) {
+        this.logger.log(`Found block #${blockNum} in database`);
+        
+        // Convert to BlockInfo format
+        return {
+          number: dbBlock.number,
+          hash: dbBlock.hash,
+          parentHash: dbBlock.parentHash,
+          stateRoot: dbBlock.stateRoot,
+          extrinsicsRoot: dbBlock.extrinsicsRoot,
+          timestamp: dbBlock.timestamp.getTime(),
+          extrinsicsCount: dbBlock.extrinsicsCount,
+          eventsCount: dbBlock.eventsCount,
+          extrinsics: dbBlock.extrinsics.map((ext: any) => ({
+            index: ext.extrinsicIndex,
+            hash: ext.hash,
+            section: ext.section,
+            method: ext.method,
+            signer: ext.signer || undefined,
+            nonce: ext.nonce || undefined,
+            args: JSON.parse(ext.args),
+            signature: ext.signature || undefined,
+            events: ext.events.map((e: any) => ({
+              section: e.section,
+              method: e.method,
+              data: JSON.parse(e.data)
+            }))
+          }))
+        } as BlockInfo;
+      }
+      
+      // If not in DB, query blockchain
+      this.logger.log(`Block #${blockNum} not in database, querying blockchain`);
       return await this.blockchainService.getBlockInfo(blockNum);
     } catch (error) {
       // Check if it's a "block not found" error
@@ -459,6 +624,37 @@ export class SearchController {
     }
 
     try {
+      // Check database first
+      const dbExtrinsic = await this.db.getExtrinsicByHash(extrinsicHash);
+      if (dbExtrinsic) {
+        this.logger.log(`Found extrinsic ${extrinsicHash.substring(0, 10)}... in database`);
+        
+        return {
+          extrinsic: {
+            index: dbExtrinsic.extrinsicIndex,
+            hash: dbExtrinsic.hash,
+            section: dbExtrinsic.section,
+            method: dbExtrinsic.method,
+            signer: dbExtrinsic.signer || '',
+            nonce: dbExtrinsic.nonce || 0,
+            args: JSON.parse(dbExtrinsic.args),
+            events: dbExtrinsic.events.map((e: any) => ({
+              section: e.section,
+              method: e.method,
+              data: JSON.parse(e.data)
+            }))
+          },
+          block: {
+            number: dbExtrinsic.block.number,
+            hash: dbExtrinsic.block.hash,
+            timestamp: dbExtrinsic.block.timestamp.getTime()
+          }
+        };
+      }
+      
+      // If not in DB, query blockchain
+      this.logger.log(`Extrinsic ${extrinsicHash.substring(0, 10)}... not in database, querying blockchain`);
+      
       // Calculate timeout based on search size - increased for better reliability
       const timeoutMs = maxBlocksToSearch <= 5000 ? 600000 : 1200000; // 10 min for small, 20 min for large
       
@@ -513,6 +709,55 @@ export class SearchController {
         success: false,
         error: error.message,
         stack: error.stack
+      };
+    }
+  }
+
+  @Get('indexer/status')
+  @ApiOperation({ summary: 'Get indexer status and statistics' })
+  @ApiResponse({ status: 200, description: 'Indexer status and stats' })
+  async getIndexerStatus(): Promise<any> {
+    try {
+      const [blockCount, extrinsicCount, addressCount, lastBlock] = await Promise.all([
+        this.db.block.count(),
+        this.db.extrinsic.count(),
+        this.db.address.count(),
+        this.db.getLastIndexedBlock(),
+      ]);
+
+      const latestBlockchain = await this.blockchainService.getLatestBlockNumber();
+      const isIndexing = this.blockchainService.isConnected();
+      const blocksBehind = lastBlock ? latestBlockchain - lastBlock : latestBlockchain;
+
+      return {
+        status: 'ok',
+        indexer: {
+          isRunning: isIndexing,
+          blocksIndexed: blockCount,
+          extrinsicsIndexed: extrinsicCount,
+          addressesIndexed: addressCount,
+          lastIndexedBlock: lastBlock,
+          currentBlockchain: latestBlockchain,
+          blocksBehind,
+          percentIndexed: lastBlock ? ((lastBlock / latestBlockchain) * 100).toFixed(2) + '%' : '0%'
+        },
+        database: {
+          type: 'SQLite',
+          location: './dev.db'
+        },
+        performance: {
+          message: blocksBehind === 0 
+            ? 'Fully synced! All queries will be instant.' 
+            : blocksBehind < 100 
+            ? 'Almost synced! Most recent data available.'
+            : `Indexing in progress. ${blocksBehind} blocks behind.`
+        }
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        error: error.message,
+        message: 'Failed to get indexer status. Database may not be initialized.'
       };
     }
   }
