@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Copy package files from backend context
 COPY backend/package*.json ./
-COPY backend/yarn.lock* ./
+# Note: yarn.lock is optional - yarn will create one if it doesn't exist
 
 # Copy Prisma schema and migrations FIRST (needed for postinstall script)
 COPY backend/prisma ./prisma
@@ -22,7 +22,8 @@ COPY backend/nest-cli.json ./
 RUN yarn build
 
 # Remove devDependencies to reduce image size (but keep Prisma CLI for migrations)
-RUN yarn install --production && yarn add -D prisma
+# Pin Prisma to 6.17.1 to avoid Prisma 7 breaking changes
+RUN yarn install --production && yarn add -D prisma@6.17.1
 
 # Expose port
 EXPOSE 3001
