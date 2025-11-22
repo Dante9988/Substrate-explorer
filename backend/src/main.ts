@@ -6,8 +6,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Get allowed origins from environment variables or use defaults
-  const allowedOrigins = process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',')
+  const allowedOriginsList = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
     : [
         'http://localhost:3000', 
         'http://127.0.0.1:3000',
@@ -18,13 +18,34 @@ async function bootstrap() {
         'http://127.0.0.1:5173',
         'https://substrate-explorer-production.up.railway.app',
         'https://substrate-explorer-frontend.vercel.app',
-        'https://substrate-explorer-frontend-9hdv4dpi7-dante9988s-projects.vercel.app',
-        'https://*.vercel.app'   // Vercel production deployments
       ];
 
-  // Enable CORS
+  // Enable CORS with function to handle Vercel preview deployments
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, Postman, etc.)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Check if origin is in the allowed list
+      if (allowedOriginsList.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow all Vercel preview deployments (*.vercel.app)
+      if (origin.endsWith('.vercel.app')) {
+        return callback(null, true);
+      }
+
+      // Allow all Vercel production deployments (exact match or subdomain)
+      if (origin.includes('vercel.app')) {
+        return callback(null, true);
+      }
+
+      // Reject other origins
+      callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
@@ -49,7 +70,7 @@ async function bootstrap() {
   // Debug logging to see what we're actually binding to
   console.log(`🔧 Binding to host: ${host}, port: ${port}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔌 CORS origins: ${allowedOrigins.join(', ')}`);
+  console.log(`🔌 CORS configured - allowing: ${allowedOriginsList.join(', ')}, and all *.vercel.app domains`);
   
   await app.listen(port, host);
   
